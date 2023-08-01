@@ -85,14 +85,6 @@ BayCANN_version <- "SimCRC_v6_20220916_2140"
 ######  3.2 MISCAN  ----
 
 #Outputs
-#### 1st pass
-# data_outputs_miscan <- read.csv("validations/MISCAN/baycann_08mar22_outcomes_MISCAN.csv")
-#### 2nd pass
-# #data_outputs_miscan <- read.csv("validations/MISCAN/targets-input_baycann_11apr22_pass_2.csv")
-# 
-# data_outputs_miscan <- subset(data_outputs_miscan,
-#                               select = -c(id_post))
-# data_outputs_miscan$index <- "Model"
 
 ###### Version MISCAN 2 (11 JUL 22)  ( POSTER SMDM) (VERSION FOR PAPER)
 data_outputs_miscan <- read.csv("validations/MISCAN/targets-input_baycann_11jul22_1100.csv")
