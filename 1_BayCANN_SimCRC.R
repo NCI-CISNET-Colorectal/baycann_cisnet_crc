@@ -1,11 +1,11 @@
 ###########################  BayCANN   #########################################
 #
-#  Objective: Script to perform an emulator-based Bayesian calibration on MISCAN-Colon 
+#  Objective: Script to perform Bayesian calibration using ANN 
 ########################### <<<<<>>>>> ##############################################
 
 #### 1.Libraries and functions  ==================================================
 
-library(keras)
+library(keras)   #Install previously tensorflow
 library(rstan)
 library(reshape2)
 library(tidyverse)
@@ -20,18 +20,26 @@ options(mc.cores = parallel::detectCores())
 rm(list = ls())
 source("baycann_functions.R")
 
-###### 1.2 Set version of BayCANN =================================================
+###### 1.2 Set version and parameters of BayCANN =================================
 
-
-BayCANN_version  <- "MISCAN_v2_20220716_1637"  #Version for paper and SMDM
-
+BayCANN_version  <- "SimCRC_v6_20220916_2140"  # Version for SMDM and paper
 folder <- paste0("output/BayCANN_versions/",BayCANN_version)
+
+#Load the parameters saved for this version
+path_params <- paste0("output/BayCANN_versions/",
+                      BayCANN_version,
+                      "/parameters_",
+                      BayCANN_version, ".RData")
+load(path_params)
+list2env(param_BayCANN, envir = .GlobalEnv)
 
 
 #### 2. General parameters ========================================================
+# The parameters in this section are already loaded but we keep them for transparency purposes 
+
 
 ###### 2.1 parameters for Data preparation 
-scale_type=1  ## 1: for scale from -1 to 1; 2: for standardization ; 3: for scale from 0 to 1
+scale_type = 1  ## 1: for scale from -1 to 1; 2: for standardization ; 3: for scale from 0 to 1
 set.seed(1234)
 
 ###### 2.1 parameters for ANN 
@@ -39,84 +47,67 @@ verbose          <- 0
 n_batch_size     <- 2000
 n_epochs         <- 15000
 patience         <- 10000
-n_hidden_nodes   <- 114
+n_hidden_nodes   <- 360
 n_hidden_layers  <- 4
 activation_fun   <- 'tanh'
 init_W=NULL
+
+# Other options to initialize weights
 #init_W=initializer_random_uniform(minval = -0.7, maxval = 0.7,seed = 2312)   ###initialization of weights with uniform distribution
 #init_W=initializer_random_normal(mean = 0, stddev = 0.1, seed = 2312)  ###initialization of weights with normal distribution
 
 
 ###### 2.2 parameters for Bayesian calibration
-n_iter    <- 300000
-n_thin    <- 100
-n_chains  <- 4
+n_iter   <- 300000
+n_thin   <- 100
+n_chains <- 4
 
 #### 3. Pre-processing actions  ===========================================
 
-Normalize_inputs    <- FALSE
-Normalize_outputs   <- FALSE
-Scale_inputs        <- TRUE  
-Scale_outputs       <- TRUE  
+Normalize_inputs    <- FALSE  # TRUE if we want to normalize inputs
+Normalize_outputs   <- FALSE  # TRUE if we want to normalize outputs 
+Scale_inputs        <- TRUE   # TRUE if we want to scale inputs
+Scale_outputs       <- TRUE   # TRUE if we want to scale outputs 
 Remove_outliers     <- TRUE  
 Standardize_targets <- FALSE
 Saved_data          <- FALSE
-Selected_targets    <- FALSE
+Selected_targets    <- FALSE  # TRUE if we want to use an specific list of calibration targets
 
-#### 4. Load the LHS data for the simulations =======================
-params_file      <- "data-raw/20220622_MISCANColon_LHS/SimulatedParameters_20220622_0147UTC.csv"
-data_sim_param <- read.csv(params_file)
-selected_params  <- c(5:(length(data_sim_param)-1))
+#### 4. Load the training and test data for the simulations =======================
 
-outputs_file     <- "data-raw/20220622_MISCANColon_LHS/SimulatedTargets_20220622_0147UTC.csv"
-data_sim_target <- read.csv(outputs_file)
-selected_targets <- c(4:(length(data_sim_target)))
-
-targets_file     <- "data-raw/20220622_MISCANColon_LHS/Targets_MISCAN_v2.0.csv"
+params_file      <- "data-raw/20220909_SimCRC_LHS/20220909_LHS_parameter_sets.csv"
+selected_params  <- c(3:33)
+outputs_file     <- "data-raw/20220909_SimCRC_LHS/20220909_SimulatedTargets_LHS_50K_DisableQuitEarly.csv"
+selected_targets <- c(5:114)
+targets_file     <- "data-raw/20220909_SimCRC_LHS/20220909_simcrc_targets.csv"
 
 
-###### 4.1 Inputs ----
-data_sim_param <- read.csv(params_file)
-data_sim_param <- data_sim_param[,selected_params]
-data_sim_param <- as.matrix(data_sim_param)
-###### 4.2 Outputs ----
-data_sim_target <- read.csv(outputs_file)
-data_sim_target <- data_sim_target[,selected_targets]
-data_sim_target <- as.matrix(data_sim_target)
-###### 4.3 Targets ----
+###### 4.1 Get list of params and targets ####
 
+###### 4.1 Input Parameters ####
+  
+  data_sim_param <- read.csv(params_file)
+  data_sim_param <- data_sim_param[,selected_params]
+  data_sim_param <- as.matrix(data_sim_param)
+  
+  ###### 4.2 Model Outputs ####
 
+  data_sim_target <- read.csv(outputs_file)
+  data_sim_target <- data_sim_target[,selected_targets]
+  data_sim_target <- as.matrix(data_sim_target)
+ 
 #### 5. Removing outliers from model outputs ####
-
-if (Remove_outliers) {
-
-  vec_maxs  <- apply(data_sim_target, 1, max)
-  vec_999   <- (vec_maxs==99999)
-  data_sim_param  <- data_sim_param[!vec_999,]
-  data_sim_target <- data_sim_target[!vec_999,]
-}
-
-
-#### 6. Normalize distributions ===================================================
-
-#(parameters)
-if (Normalize_inputs) {
-  param_norm        <- best_normal_dataset(data_sim_param)
-  data_sim_param    <- param_norm[["data_normal"]]
-  inv_param_transf  <- param_norm[["inverse_dist"]]
-}
-
-#(model outputs)
-if (Normalize_outputs) {
-  target_norm          <- best_normal_dataset(data_sim_target)
-  data_sim_target      <- target_norm[["data_normal"]]
-  inv_target_transform <- target_norm[["inverse_dist"]]
-}
-
+  
+  if (Remove_outliers) {
+    vec_out <- outlier_vector(data_sim_target)
+    data_sim_param  <- data_sim_param[!vec_out,]
+    data_sim_target <- data_sim_target[!vec_out,]
+  }
+  
 
 #### 7. Train/test partition ======================================================
 
-require(caTools)
+library(caTools)
 set.seed(1223)
 
 train.rows<-sample.split(data_sim_param[,1],SplitRatio=0.8)
@@ -135,48 +126,16 @@ prepared_data <- prepare_data(xtrain = data_sim_param_train,
 
 list2env(prepared_data, envir = .GlobalEnv)
 
-#### 8. Unscale to keep the original scale of output model ========================
-
-# In case we decide to work with original scales 
-
-if (!Scale_inputs) {
-  xtrain_scaled <- unscale_data(xtrain_scaled, vec.mins = xmins, vec.maxs = xmaxs, vec.means=xmeans, vec.sds = xsds, type = scale_type)
-  xtest_scaled <- unscale_data(xtest_scaled, vec.mins = xmins, vec.maxs = xmaxs, vec.means=xmeans, vec.sds = xsds, type = scale_type)
-}
-
-if (!Scale_outputs) {
-  ytrain_scaled <- unscale_data(ytrain_scaled, vec.mins = ymins, vec.maxs = ymaxs, vec.means=ymeans, vec.sds = ysds, type = scale_type)
-  ytest_scaled <- unscale_data(ytest_scaled, vec.mins = ymins, vec.maxs = ymaxs, vec.means=ymeans, vec.sds = ysds, type = scale_type)
-}
 
 ####  9. Load the targets and their se ============================================
 
 data_true_targets  <- read.csv(targets_file)
-
-# If we select an specific list of targets
-if(Selected_targets) {
-  data_true_targets  <- data_true_targets[(data_true_targets$target_names%in%Selected_MISCAN_R_Targets),]   
-}
 
 true_targets_mean  <- data_true_targets$targets
 true_targets_upper <- data_true_targets$stopping_upper_bounds
 true_targets_lower <- data_true_targets$stopping_lower_bounds
 true_targets_se   <- (true_targets_upper - true_targets_lower)/(2*1.96)
 
-#Standardize with respect to the true targets
-
-if( Standardize_targets) {
-  
-  if(Scale_outputs) {
-    true_targets_mean <- 2 * (true_targets_mean - ymins) / (ymaxs - ymins) - 1   ## range from -1 to 1
-    true_targets_se <- 2 * (true_targets_se) / (ymaxs - ymins)
-  }  
-  
-  for (i in 1:length(true_targets_mean)) {
-    ytrain_scaled[,i] <- (ytrain_scaled[,i] - true_targets_mean[i]) / true_targets_se[i] 
-    ytest_scaled[,i]  <- (ytest_scaled[,i] - true_targets_mean[i]) / true_targets_se[i] 
-  }
-}
 
 #### 10. Scale the targets and their SE  ####
 
@@ -187,7 +146,7 @@ if (scale_type==1) {
 
 if (scale_type==2) {
   y_targets <- (true_targets_mean - ymeans)/ysds   ## Standardization
-  y_targets_se <-(true_targets_se)*(sqrt(100))/ysds
+  y_targets_se <-(true_targets_se)/ysds
 }
 
 if (scale_type==3) {
@@ -198,18 +157,12 @@ if (scale_type==3) {
 y_targets <- t(as.matrix(y_targets))
 y_targets_se <- t(as.matrix(y_targets_se))   
 
-# converting "y_targets" to 0 and "y_targets_se" to 1
-if( Standardize_targets) {
-  y_targets <- y_targets - y_targets
-  y_targets_se <- y_targets_se / y_targets_se
-}
 
 #### 11. Keras Section BayCANN SimCRC ==============================================
 
 # File name of keras model
 
 path_keras_model <- paste0(folder,"/model_keras_",BayCANN_version,".h5")    ##File path for the compiled model
-
 
 model <- keras_model_sequential()
 mdl_string <- paste("model %>% layer_dense(units = n_hidden_nodes, kernel_initializer=init_W, activation = activation_fun, input_shape = n_inputs) %>%",
@@ -273,7 +226,7 @@ ann_valid_transpose <- ann_valid %>%
   pivot_longer(cols = -c(sim, type)) %>%
   pivot_wider(id_cols = c(sim, name), names_from = type, values_from = value)
 
-##Partition of validation data for Graph (3 parts)
+##Partition of validation data for Graph (4 parts)
 n_partition <-4
 n_part_bach <-floor(n_outputs/n_partition)
 
@@ -319,7 +272,6 @@ ggplot(data = ann_valid_transpose4, aes(x = model, y = pred)) +
   ylab("ANN predictions (scaled)") +
   #coord_equal() +
   theme_bw()
-
 
 #### 12. Stan section ==============================================================
 
@@ -390,6 +342,8 @@ names(m)[1:n_inputs] <- param_names
 saveRDS(m, path_stan_model)
 
 m <- readRDS(path_stan_model) 
+param_names    <- colnames(data_sim_param)
+names(m)[1:n_inputs] <- param_names
 
 ###### 12.1 Stan Diagnose  ----
 
@@ -399,12 +353,15 @@ stan_plot(m,pars=param_names, point_est = "mean", show_density = TRUE, fill_colo
 
 stan_hist(m,pars=param_names, inc_warmup = FALSE)
 
-stan_dens(m,pars=param_names, inc_warmup = FALSE, separate_chains=TRUE)
+standensity <- stan_dens(m,pars=param_names, inc_warmup = FALSE, separate_chains=TRUE)
+ggsave(filename = paste0(folder,"/fig_posterior_distribution_chains",BayCANN_version,".png"),
+       standensity,
+       width = 24, height = 16)
 
 stan_dens(m,pars=param_names, inc_warmup = FALSE, separate_chains=FALSE)
 
 stan_ac(m,pars=param_names[1:15], inc_warmup = FALSE, separate_chains=TRUE)
-stan_ac(m,pars=param_names[16:37], inc_warmup = FALSE, separate_chains=TRUE)
+stan_ac(m,pars=param_names[16:30], inc_warmup = FALSE, separate_chains=TRUE)
 
 stan_rhat(m,pars=param_names)          # Rhat statistic 
 stan_par(m,par=param_names[1])         # Mean metrop. acceptances, sample step size
@@ -413,11 +370,11 @@ stan_mcse(m,pars=param_names)          # Monte Carlo SE / Posterior SD
 stan_diag(m,)
 
 ###### 12.2 Stan extraction  ----
+
 params <- rstan::extract(m, permuted=TRUE, inc_warmup = FALSE)
 lp <- params$lp__
 Xq <- params$Xq
 Xq_df = as.data.frame(Xq)
-
 
 # Scale the posteriors
 if (Scale_inputs) {
@@ -426,13 +383,9 @@ if (Scale_inputs) {
   Xq_unscaled <- Xq_df
 }
 
-##### Inverse normalization  
-if (Normalize_inputs) {
-  Xq_unscaled <- normalize_predict(df=Xq_unscaled, list_transf = inv_param_transf,inverse = TRUE)
-  data_sim_param_train <- normalize_predict(df=data_sim_param_train, list_transf = inv_param_transf,inverse = TRUE)
-}
 
 Xq_lp <- cbind(Xq_unscaled, lp)
+
 # Save the unscaled posterior samples
 write.csv(Xq_lp,
           file = path_posterior,
@@ -527,8 +480,17 @@ library(dampack)
 gg_ann_vs_imis <- ggplot(df_samp_prior_post,
                          aes(x = value, y = ..density.., fill = Distribution)) +
   facet_wrap(~Parameter, scales = "free",
-             ncol = 4,
+             ncol = 5,
              labeller = label_parsed) +
+  # geom_vline(data = data.frame(Parameter = as.character(v_names_params_greek),
+  #                             value = x_true_data$x, row.names = v_names_params_greek),
+  #          aes(xintercept = value)) +
+  #geom_vline(data = data.frame(Parameter = as.character(v_names_params_greek),
+  #            value = c(t(map_baycann)), row.names = v_names_params_greek),
+  #aes(xintercept = value), color = "tomato") +
+  # geom_vline(data = df_maps_n_true_params,
+  #            aes(xintercept = value, label="MAP"), color = "tomato") +
+  #scale_x_continuous(breaks = (5)) +
   scale_x_continuous(breaks = number_ticks(5)) +
   scale_color_manual("", values = c("black", "navy blue", "tomato","green")) +
   geom_density(alpha=0.5) +
@@ -548,77 +510,58 @@ gg_ann_vs_imis <- ggplot(df_samp_prior_post,
         strip.text = element_text(hjust = 0))
 gg_ann_vs_imis
 ggsave(gg_ann_vs_imis,
-       filename = paste0(folder,"/fig_posterior_calibrated_distribution.png"),
-       width = 12, height = 12)
+       filename = paste0(folder,"/fig_ANN-vs-IMIS-posterior.pdf"),
+       width = 36, height = 24)
+ggsave(gg_ann_vs_imis,
+       filename = paste0(folder,"/fig_ANN-vs-IMIS-posterior.png"),
+       width = 36, height = 24)
 
-
-# 13. Internal validation  -------------------------------------------------
-
-###### 13.1 Load Stan file -----
-m <- readRDS(path_stan_model) 
-
-#Extraction of parameters 
-params <- rstan::extract(m)
-Xq <- params$Xq
-Xq_df = as.data.frame(Xq)
-colnames(Xq_df) <- x_names
-Xq_df <- as.matrix(Xq_df)
-
-pred_posterior <- model %>% predict(Xq_df)
-pred_posterior <- data.frame(pred_posterior)
-colnames(pred_posterior) <- y_names
-
-if (Scale_outputs) {
-  pred_posterior_unsc <- unscale_data(pred_posterior, vec.mins = ymins, vec.maxs = ymaxs, vec.means = ymeans, vec.sds = ysds, type = scale_type)
-}
-
-path_validation_ANN <- paste0(folder,"/prediction_ANN_posteriors_",BayCANN_version,".csv")
-write.csv(pred_posterior_unsc,
-          file = path_validation_ANN,
-          row.names = FALSE)
 
 # 14. Save BayCANN parameters  -------------------------------------------------
 
 ##Save BayCANN parameters
 path_baycann_params <- paste0(folder,"/parameters_",BayCANN_version,".RData")
-param_BayCANN <- list(BayCANN_version    = BayCANN_version, 
-                      scale_type         = scale_type,
-                      scale_type         = scale_type, 
-                      verbose            = verbose,
-                      n_batch_size       = n_batch_size,
-                      n_chains           = n_chains,
-                      n_epochs           = n_epochs,
-                      patience           = patience,
-                      n_hidden_nodes     = n_hidden_nodes,
-                      n_hidden_layers    = n_hidden_layers,
-                      activation_fun     = activation_fun,
-                      init_W             = init_W,
-                      n_iter             = n_iter,
-                      n_thin             = n_thin,
-                      Normalize_inputs   = Normalize_inputs,
-                      Normalize_outputs  = Normalize_outputs,
-                      Scale_inputs       = Scale_inputs,
-                      Scale_outputs      = Scale_outputs,
-                      Remove_outliers    = Remove_outliers, 
-                      Standardize_targets= Standardize_targets,
-                      Saved_data         = Saved_data,
-                      Selected_targets   = Selected_targets,
-                      params_file        = params_file,
-                      selected_params    = selected_params,
-                      outputs_file       = outputs_file,
-                      selected_targets   = selected_targets,
-                      targets_file       = targets_file,
-                      path_keras_model   = path_keras_model,
-                      t_training         = t_training,
-                      metric_loss        = metric_loss,
-                      metric_mae         = metric_mae,
-                      metric_accuracy    = metric_accuracy, 
-                      path_posterior     = path_posterior, 
-                      file_perceptron    = file_perceptron, 
-                      t_calibration      = t_calibration,
-                      path_stan_model    = path_stan_model,
-                      path_validation_ANN= path_validation_ANN,
-                      path_baycann_params=path_baycann_params
+param_BayCANN <- list(BayCANN_version, 
+                      scale_type,
+                      scale_type, 
+                      verbose,
+                      n_batch_size,
+                      n_chains,
+                      n_epochs,
+                      patience,
+                      n_hidden_nodes,
+                      n_hidden_layers,
+                      activation_fun,
+                      init_W,
+                      n_iter,
+                      n_thin,
+                      Normalize_inputs,
+                      Normalize_outputs,
+                      Scale_inputs,
+                      Scale_outputs,
+                      Remove_outliers, 
+                      Standardize_targets,
+                      Saved_data,
+                      Selected_targets,
+                      params_file,
+                      selected_params,
+                      outputs_file,
+                      selected_targets,
+                      targets_file,
+                      path_keras_model,
+                      t_training,
+                      metric_loss,
+                      metric_mae,
+                      metric_accuracy, 
+                      path_posterior, 
+                      file_perceptron, 
+                      t_calibration,
+                      path_stan_model,
+                      path_validation_ANN,
+                      path_baycann_params
 )
 
 save(param_BayCANN, file = path_baycann_params)
+
+
+
