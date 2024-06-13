@@ -1,6 +1,6 @@
 ###########################  BayCANN   #########################################
 #
-#  Objective: Script to perform Bayesian calibration using ANN 
+#  Objective: Script to perform an emulator-based Bayesian calibration on CRC-SPIN 
 ########################### <<<<<>>>>> ##############################################
 
 #### 1.Libraries and functions  ==================================================
@@ -23,6 +23,8 @@ source("baycann_functions.R")
 
 ###### 1.2 Set version of BayCANN =================================================
 
+New_version <- FALSE
+
 Model_name       <- "CRCSPIN"
 Version_model    <- "1"
 Date_version     <- format(Sys.time(), "%Y%m%d_%H%M")
@@ -33,12 +35,12 @@ folder <- paste0("output/BayCANN_versions/",BayCANN_version)
 
 #Uncomment to load manually the parameters used in the version
 
-# path_params <- paste0("output/BayCANN_versions/",
-#                       BayCANN_version,
-#                       "/parameters_",
-#                       BayCANN_version, ".RData")
-# load(path_params)
-# list2env(param_BayCANN, envir = .GlobalEnv)
+path_params <- paste0("output/BayCANN_versions/",
+                      BayCANN_version,
+                      "/parameters_",
+                      BayCANN_version, ".RData")
+load(path_params)
+list2env(param_BayCANN, envir = .GlobalEnv)
 
 ###### 1.3 Create folder for current BayCANN version ==============================
 
@@ -64,8 +66,8 @@ n_batch_size     <- 2000
 n_chains         <- 4
 n_epochs         <- 15000
 patience         <- 1000
-n_hidden_nodes   <- 84
-n_hidden_layers  <- 5
+n_hidden_nodes   <- 140  
+n_hidden_layers  <- 1 
 activation_fun   <- 'sigmoid'
 init_W= NULL
 #init_W=initializer_random_normal(mean = 0, stddev = 0.1, seed = 2312)
@@ -74,19 +76,21 @@ init_W= NULL
 
 
 ###### 2.2 parameters for Bayesian calibration
-n_iter <- 300000
+n_iter <- 100000
 n_thin <- 100
 
 #### 3. Pre-processing actions  ===========================================
 
 Normalize_inputs    <- FALSE
 Normalize_outputs   <- FALSE
-Scale_inputs        <- TRUE  #False for better posteriors
-Scale_outputs       <- TRUE  #False for better posteriors
+Scale_inputs        <- TRUE  
+Scale_outputs       <- TRUE  
 Remove_outliers     <- FALSE  
 Standardize_targets <- FALSE
 Saved_data          <- FALSE
 Selected_targets    <- FALSE
+
+#### STEP 1 in paper: Data below comes from LHS design using the original CISNET MODEL ####
 
 #### 4. Load the LHS data for the simulations =======================
 
@@ -103,7 +107,7 @@ selected_params  <- colnames(data_sim_param)
 targets_file     <- "data-raw/20220325_CRC_SPIN/targets.xlsx"
 
 
-#LHS Version 3 (23 Jul 2022)
+
 ###### 4.1 Outputs ----
 data_sim_target <- read.csv(outputs_file)
 v_NA <- rowSums(is.na(data_sim_target)) > 0   # Vector that identifies at least one NA in targets
@@ -117,17 +121,10 @@ data_sim_param <- data_sim_param[!v_NA,]
 data_sim_param <- data_sim_param[,selected_params]
 data_sim_param <- as.matrix(data_sim_param)
 
-###### 4.3 Targets ----
-
-
 
 #### 5. Removing outliers from model outputs ####
 
 if (Remove_outliers) {
-  # vec_out <- outlier_vector(data_sim_target)
-  # data_sim_param  <- data_sim_param[!vec_out,]
-  # data_sim_target <- data_sim_target[!vec_out,]
-  
   vec_out <- outlier_vector(data_sim_target)
   data_sim_param  <- data_sim_param[!vec_out,]
   data_sim_target <- data_sim_target[!vec_out,]
@@ -150,6 +147,7 @@ if (Normalize_outputs) {
   inv_target_transform <- target_norm[["inverse_dist"]]
 }
 
+#### STEP 2 in paper: Splitting and rescaling data ####
 
 #### 7. Train/test partition ======================================================
 
@@ -238,6 +236,8 @@ if( Standardize_targets) {
   y_targets_se <- y_targets_se / y_targets_se
 }
 
+#### STEP 3 in paper: Artificial Neural Network ####
+
 #### 11. Keras Section BayCANN SimCRC ==============================================
 
 # File name of keras model
@@ -287,11 +287,11 @@ save_model_hdf5(model,path_keras_model)  #Save the model
 model <- load_model_hdf5(path_keras_model)
 
 
-###### 11.4 History Graph ####
+###### 11.1 History Graph ####
 
 plot(history)   #Plot loss function and accuracy function
 
-###### 11.5 Prediction Graph  ####
+###### 11.2 Prediction Graph  ####
 
 pred <- model %>% predict(xtest_scaled)
 ytest_scaled_pred <- data.frame(pred)
@@ -351,7 +351,7 @@ ggplot(data = ann_valid_transpose4, aes(x = model, y = pred)) +
   #coord_equal() +
   theme_bw()
 
-###### 11.6 Figure Prediction for poster SMDM ==========================================####
+###### 11.3 Figure Prediction ==========================================####
 
 param_poster <- ann_valid_transpose2 [ann_valid_transpose2$name%in%c("Corley_adeno_prev_fem_60_64","Corley_adeno_prev_fem_70_74",
                                                                      "Corley_adeno_prev_fem_50_54", "Corley_adeno_prev_fem_75plus"),] 
@@ -381,8 +381,7 @@ plot_CRCSPIN_ANN_prediction <- ggplot(data = param_poster, aes(x = model, y = pr
 
 plot_CRCSPIN_ANN_prediction
 
-save(plot_CRCSPIN_ANN_prediction ,file = "figs/PosterBayCANN/plot_CRCSPIN_ANN_prediction_SMDM.RData")
-
+#### STEP 4 in paper: Bayesian calibration ####
 
 #### 12. Stan section ==============================================================
 
@@ -453,7 +452,9 @@ saveRDS(m, path_stan_model)
 
 m <- readRDS(path_stan_model) 
 
+
 ###### 12.1 Stan Diagnose  ----
+param_names    <- colnames(data_sim_param)
 
 stan_trace(m,pars=param_names,inc_warmup = FALSE)
 
@@ -474,12 +475,7 @@ stan_ess(m,pars=param_names)           # Effective sample size / Sample size
 stan_mcse(m,pars=param_names)          # Monte Carlo SE / Posterior SD
 stan_diag(m,)
 
-library(coda)
-gelman_msrf <- gelman.diag(m2)
-
-library(shinystan)
-objeto_mcmc_list <- as.mcmc.list(m)
-shinystan::launch_shinystan(m)
+#### STEP 5 in paper: Rescaling posterior distribution ####
 
 ###### 12.2 Stan extraction  ----
 params <- rstan::extract(m, permuted=TRUE, inc_warmup = FALSE)
@@ -573,8 +569,6 @@ df_samp_prior_post$Distribution <- ordered(df_samp_prior_post$Distribution,
                                            levels = c("Prior",
                                                       "Posterior BayCANN CRC-SPIN"))
 
-
-
 df_samp_prior_post$Parameter <- factor(df_samp_prior_post$Parameter,
                                        levels = levels(df_samp_prior_post$Parameter),
                                        ordered = TRUE)
@@ -585,8 +579,7 @@ df_maps_n_true_params <- data.frame(Type = ordered(rep(c( "BayCANN MAP"), each =
 df_maps_n_true_params
 
 
-### Plot priors and ANN and IMIS posteriors
-
+### Plot priors and posteriors
 
 df_maps_n_true_params$Parameter<-as.factor(x_names)
 
@@ -598,15 +591,6 @@ gg_ann_vs_imis <- ggplot(df_samp_prior_post,
   facet_wrap(~Parameter, scales = "free",
              ncol = 4,
              labeller = label_parsed) +
-  # geom_vline(data = data.frame(Parameter = as.character(v_names_params_greek),
-  #                             value = x_true_data$x, row.names = v_names_params_greek),
-  #          aes(xintercept = value)) +
-  #geom_vline(data = data.frame(Parameter = as.character(v_names_params_greek),
-  #            value = c(t(map_baycann)), row.names = v_names_params_greek),
-  #aes(xintercept = value), color = "tomato") +
-  # geom_vline(data = df_maps_n_true_params,
-  #            aes(xintercept = value, label="MAP"), color = "tomato") +
-  #scale_x_continuous(breaks = (5)) +
   scale_x_continuous(breaks = number_ticks(5)) +
   scale_color_manual("", values = c("black", "navy blue", "tomato","green")) +
   geom_density(alpha=0.5) +
@@ -625,9 +609,74 @@ gg_ann_vs_imis <- ggplot(df_samp_prior_post,
                                         color = "white"),
         strip.text = element_text(hjust = 0))
 gg_ann_vs_imis
-ggsave(gg_ann_vs_imis,
-       filename = paste0(folder,"/fig5_ANN-vs-IMIS-posterior.png"),
-       width = 12, height = 12)
+
+#Comparison between BayCANN and IMIS results
+load("output/IMABC calibration/m_calib_post.Rdata")
+
+n_samp <- 1000
+df_samp_prior <- melt(cbind(Distribution = "Prior",
+                            as.data.frame(data_sim_param_train[1:n_samp, ])),
+                      variable.name = "Parameter")
+
+df_samp_post_ann   <- melt(cbind(Distribution = "Posterior BayCANN_CRCSPIN",
+                                 as.data.frame(df_post_ann[1:n_samp, ])),
+                           variable.name = "Parameter")
+
+df_samp_post_imabc   <- melt(cbind(Distribution = "Posterior IMABC_CRCSPIN",
+                                   as.data.frame(m_calib_post[1:n_samp, ])),
+                             variable.name = "Parameter")
+
+
+df_samp_prior_post <- rbind(df_samp_prior,
+                            df_samp_post_ann,
+                            df_samp_post_imabc)
+
+df_samp_prior_post$Distribution <- ordered(df_samp_prior_post$Distribution,
+                                           levels = c("Prior",
+                                                      "Posterior IMABC_CRCSPIN",
+                                                      "Posterior BayCANN_CRCSPIN"))
+
+
+
+df_samp_prior_post$Parameter <- factor(df_samp_prior_post$Parameter,
+                                       levels = levels(df_samp_prior_post$Parameter),
+                                       ordered = TRUE)
+
+df_maps_n_true_params <- data.frame(Type = ordered(rep(c( "BayCANN MAP"), each = n_inputs),
+                                                   levels = c("BayCANN MAP")),
+                                    value = c(t(map_baycann)))
+df_maps_n_true_params
+### Plot priors and ANN and IMIS posteriors
+
+
+df_maps_n_true_params$Parameter<-as.factor(x_names)
+
+
+library(dampack)
+
+gg_ann_vs_imis <- ggplot(df_samp_prior_post,
+                         aes(x = value, y = ..density.., fill = Distribution)) +
+  facet_wrap(~Parameter, scales = "free",
+             ncol = 5,
+             labeller = label_parsed) +
+  scale_x_continuous(breaks = number_ticks(5)) +
+  scale_color_manual("", values = c("black", "navy blue", "tomato","green")) +
+  geom_density(alpha=0.5) +
+  theme_bw(base_size = 16) +
+  guides(fill = guide_legend(title = "", order = 1),
+         linetype = guide_legend(title = "", order = 2),
+         color = guide_legend(title = "", order = 2)) +
+  theme(legend.position = "bottom",
+        legend.box = "vertical",
+        legend.margin=margin(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        strip.background = element_rect(fill = "white",
+                                        color = "white"),
+        strip.text = element_text(hjust = 0))
+gg_ann_vs_imis
 
 # 13. Internal validation  -------------------------------------------------
 
@@ -700,56 +749,5 @@ param_BayCANN <- list(BayCANN_version    = BayCANN_version,
 
 save(param_BayCANN, file = path_baycann_params)
 
-###### 14.1 Save in excel   ---------------------------------------------------
-
-library(xlsx)
-date_save <- format(Sys.time(), "%Y%m%d_%H%M")
-wb <- xlsx::loadWorkbook("Docs/Model_testing_auto.xlsx")
-
-sheets   <- getSheets(wb)
-rows     <- getRows(sheets[[1]]) 
-next_row <- length(rows) + 2
-reg_seq  <- ceiling(length(rows)/2 +1)
-
-df_baycann_params <- data.frame (date_save ,
-                                 Model_name,               
-                                 BayCANN_version, 
-                                 scale_type,
-                                 verbose,
-                                 n_batch_size,
-                                 n_chains,
-                                 n_epochs,
-                                 patience,
-                                 n_hidden_nodes,
-                                 n_hidden_layers,
-                                 activation_fun,
-                                 n_iter,
-                                 n_thin,
-                                 Normalize_inputs,
-                                 Normalize_outputs,
-                                 Scale_inputs,
-                                 Scale_outputs,
-                                 Remove_outliers, 
-                                 Standardize_targets,
-                                 Saved_data,
-                                 params_file,
-                                 outputs_file,
-                                 targets_file,
-                                 path_keras_model,
-                                 t_training,
-                                 metric_loss,
-                                 metric_mae,
-                                 metric_accuracy, 
-                                 path_posterior, 
-                                 file_perceptron,
-                                 t_calibration,
-                                 path_stan_model,
-                                 path_validation_ANN,
-                                 path_baycann_params,row.names = as.character(reg_seq)
-)
-
-addDataFrame(df_baycann_params, sheets[[1]], startRow=(next_row), startColumn=1)
-
-saveWorkbook(wb, "Docs/Model_testing_auto.xlsx")
 
 
