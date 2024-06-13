@@ -1,6 +1,6 @@
 ###########################  BayCANN   #########################################
 #
-#  Objective: Script to perform Bayesian calibration using ANN 
+#  Objective: Script to perform an emulator-based Bayesian calibration on SimCRC
 ########################### <<<<<>>>>> ##############################################
 
 #### 1.Libraries and functions  ==================================================
@@ -22,21 +22,10 @@ source("baycann_functions.R")
 
 ###### 1.2 Set version and parameters of BayCANN =================================
 
-BayCANN_version  <- "SimCRC_v6_20220916_2140"  # Version for SMDM and paper
+BayCANN_version  <- "SimCRC_v6_20220916_2140"  # Version for MDM and paper
 folder <- paste0("output/BayCANN_versions/",BayCANN_version)
 
-#Load the parameters saved for this version
-path_params <- paste0("output/BayCANN_versions/",
-                      BayCANN_version,
-                      "/parameters_",
-                      BayCANN_version, ".RData")
-load(path_params)
-list2env(param_BayCANN, envir = .GlobalEnv)
-
-
 #### 2. General parameters ========================================================
-# The parameters in this section are already loaded but we keep them for transparency purposes 
-
 
 ###### 2.1 parameters for Data preparation 
 scale_type = 1  ## 1: for scale from -1 to 1; 2: for standardization ; 3: for scale from 0 to 1
@@ -68,10 +57,13 @@ Normalize_inputs    <- FALSE  # TRUE if we want to normalize inputs
 Normalize_outputs   <- FALSE  # TRUE if we want to normalize outputs 
 Scale_inputs        <- TRUE   # TRUE if we want to scale inputs
 Scale_outputs       <- TRUE   # TRUE if we want to scale outputs 
-Remove_outliers     <- TRUE  
-Standardize_targets <- FALSE
-Saved_data          <- FALSE
+Remove_outliers     <- TRUE   # TRUE if we want to remove outliers
+Standardize_targets <- FALSE  # TRUE if we want to standardize targets
+Saved_data          <- FALSE  # TRUE if we want to saved the data
 Selected_targets    <- FALSE  # TRUE if we want to use an specific list of calibration targets
+
+
+#### STEP 1 in paper: Data below comes from LHS design using the original CISNET MODEL #### 
 
 #### 4. Load the training and test data for the simulations =======================
 
@@ -80,9 +72,6 @@ selected_params  <- c(3:33)
 outputs_file     <- "data-raw/20220909_SimCRC_LHS/20220909_SimulatedTargets_LHS_50K_DisableQuitEarly.csv"
 selected_targets <- c(5:114)
 targets_file     <- "data-raw/20220909_SimCRC_LHS/20220909_simcrc_targets.csv"
-
-
-###### 4.1 Get list of params and targets ####
 
 ###### 4.1 Input Parameters ####
   
@@ -104,7 +93,8 @@ targets_file     <- "data-raw/20220909_SimCRC_LHS/20220909_simcrc_targets.csv"
     data_sim_target <- data_sim_target[!vec_out,]
   }
   
-
+#### STEP 2 in paper: Splitting and rescaling data ####
+  
 #### 7. Train/test partition ======================================================
 
 library(caTools)
@@ -157,6 +147,7 @@ if (scale_type==3) {
 y_targets <- t(as.matrix(y_targets))
 y_targets_se <- t(as.matrix(y_targets_se))   
 
+#### STEP 3 in paper: Artificial Neural Network ####
 
 #### 11. Keras Section BayCANN SimCRC ==============================================
 
@@ -273,14 +264,16 @@ ggplot(data = ann_valid_transpose4, aes(x = model, y = pred)) +
   #coord_equal() +
   theme_bw()
 
+#### STEP 4 in paper: Bayesian calibration ####
+
 #### 12. Stan section ==============================================================
 
 path_posterior <- paste0(folder,"/calibrated_posteriors_",BayCANN_version,".csv")
 
 weights <- get_weights(model) #get ANN weights
 
-n_hidden_layers <- length(weights)/2-2    #Removing bias layers and input and output layers  (Carlos P)
-n_hidden_nodes  <- ncol(weights[[1]])     #Get number of hidden nodes from the firs layers (Carlos P)
+n_hidden_layers <- length(weights)/2-2    #Removing bias layers and input and output layers
+n_hidden_nodes  <- ncol(weights[[1]])     #Get number of hidden nodes from the firs layers
 
 # pass the weights and biases to Stan for Bayesian calibration
 n_layers <- length(weights)
@@ -295,7 +288,6 @@ for (l in 1:n_hidden_layers){
   beta_middle[l,,] <- weights[[l*2+2]]
 }
 
-###Información para inferencia en Stan
 stan.dat=list(
   num_hidden_nodes = n_hidden_nodes,
   num_hidden_layers= n_hidden_layers,
@@ -368,6 +360,9 @@ stan_par(m,par=param_names[1])         # Mean metrop. acceptances, sample step s
 stan_ess(m,pars=param_names)           # Effective sample size / Sample size
 stan_mcse(m,pars=param_names)          # Monte Carlo SE / Posterior SD
 stan_diag(m,)
+
+
+#### STEP 5 in paper: Rescaling posterior distribution ####
 
 ###### 12.2 Stan extraction  ----
 
@@ -469,7 +464,7 @@ df_maps_n_true_params <- data.frame(Type = ordered(rep(c( "BayCANN MAP"), each =
 df_maps_n_true_params
 
 
-### Plot priors and ANN and IMIS posteriors
+### Plot priors and ANN posteriors
 
 
 df_maps_n_true_params$Parameter<-as.factor(x_names)
@@ -482,15 +477,6 @@ gg_ann_vs_imis <- ggplot(df_samp_prior_post,
   facet_wrap(~Parameter, scales = "free",
              ncol = 5,
              labeller = label_parsed) +
-  # geom_vline(data = data.frame(Parameter = as.character(v_names_params_greek),
-  #                             value = x_true_data$x, row.names = v_names_params_greek),
-  #          aes(xintercept = value)) +
-  #geom_vline(data = data.frame(Parameter = as.character(v_names_params_greek),
-  #            value = c(t(map_baycann)), row.names = v_names_params_greek),
-  #aes(xintercept = value), color = "tomato") +
-  # geom_vline(data = df_maps_n_true_params,
-  #            aes(xintercept = value, label="MAP"), color = "tomato") +
-  #scale_x_continuous(breaks = (5)) +
   scale_x_continuous(breaks = number_ticks(5)) +
   scale_color_manual("", values = c("black", "navy blue", "tomato","green")) +
   geom_density(alpha=0.5) +
@@ -562,6 +548,4 @@ param_BayCANN <- list(BayCANN_version,
 )
 
 save(param_BayCANN, file = path_baycann_params)
-
-
 
