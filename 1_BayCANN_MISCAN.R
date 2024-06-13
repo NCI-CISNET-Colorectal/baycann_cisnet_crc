@@ -23,7 +23,7 @@ source("baycann_functions.R")
 ###### 1.2 Set version and parameters of BayCANN =================================================
 
 
-BayCANN_version  <- "MISCAN_v2_20220716_1637"  #Version for paper and SMDM
+BayCANN_version  <- "MISCAN_v2_20220716_1637" 
 
 folder <- paste0("output/BayCANN_versions/",BayCANN_version)
 
@@ -73,6 +73,8 @@ Standardize_targets <- FALSE
 Saved_data          <- FALSE
 Selected_targets    <- FALSE
 
+#### STEP 1 in paper: Data below comes from LHS design using the original CISNET MODEL ####
+
 #### 4. Load the LHS data for the simulations =======================
 params_file      <- "data-raw/20220622_MISCANColon_LHS/SimulatedParameters_20220622_0147UTC.csv"
 data_sim_param <- read.csv(params_file)
@@ -107,7 +109,7 @@ if (Remove_outliers) {
 }
 
 
-
+#### STEP 2 in paper: Splitting and rescaling data ####
 #### 7. Train/test partition ======================================================
 
 require(caTools)
@@ -166,6 +168,7 @@ y_targets <- t(as.matrix(y_targets))
 y_targets_se <- t(as.matrix(y_targets_se))   
 
 
+#### STEP 3 in paper: Artificial Neural Network ####
 
 #### 11. Keras Section BayCANN SimCRC ==============================================
 
@@ -283,7 +286,7 @@ ggplot(data = ann_valid_transpose4, aes(x = model, y = pred)) +
   #coord_equal() +
   theme_bw()
 
-
+#### STEP 4 in paper: Bayesian calibration ####
 #### 12. Stan section ==============================================================
 
 path_posterior <- paste0(folder,"/calibrated_posteriors_",BayCANN_version,".csv")
@@ -376,6 +379,8 @@ stan_par(m,par=param_names[1])         # Mean metrop. acceptances, sample step s
 stan_ess(m,pars=param_names)           # Effective sample size / Sample size
 stan_mcse(m,pars=param_names)          # Monte Carlo SE / Posterior SD
 stan_diag(m,)
+
+#### STEP 5 in paper: Rescaling posterior distribution ####
 
 ###### 12.2 Stan extraction  ----
 params <- rstan::extract(m, permuted=TRUE, inc_warmup = FALSE)
@@ -476,7 +481,7 @@ df_maps_n_true_params <- data.frame(Type = ordered(rep(c( "BayCANN MAP"), each =
 df_maps_n_true_params
 
 
-### Plot priors and ANN and IMIS posteriors
+### Plot priors and ANN posteriors
 
 
 df_maps_n_true_params$Parameter<-as.factor(x_names)
