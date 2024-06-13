@@ -27,46 +27,8 @@ source("baycann_functions.R")
 
 ######  3.1 SimCRC  ----
 
-#Outputs
-data_outputs_simcrc <- read.csv("validations/SimCRC/AllLLOutput_20220404.csv")
-data_outputs_simcrc <- subset(data_outputs_simcrc, 
-                              select = -c(OutTag,Sex, QuitEarly, Seed))
-data_outputs_simcrc$index <- "Model"
-#Targets
-true_target_simcrc <- read.csv("data-raw/20211209_SimCRC_LHS/20211210_targets.csv")
-
-
-#Version BayCANN
-# data_outputs_simcrc <- read.csv("output/SimCRC/prediction_ANN_posteriors_SimCRC_v2_13jul22_1454.csv")
-# data_outputs_simcrc$index <- "Model"
-# true_target_simcrc <- read.csv("data-raw/20220316_SimCRC_LHS/20220316_simcrc_targets.csv")
-
-#Version 3 BayCANN (20/May/2022)     ##Version shared with SimCRC team on  20/may/2022
-data_outputs_simcrc <- read.csv("output/SimCRC/prediction_ANN_posteriors_SimCRC_v3_15Ago22_1658_rep.csv")
-data_outputs_simcrc$index <- "Model"
-true_target_simcrc <- read.csv("data-raw/20220316_SimCRC_LHS/20220316_simcrc_targets.csv")
-true_target_simcrc  <- true_target_simcrc[(true_target_simcrc$target_names%in%Selected_SimCRC_Targets),] 
-
-
-#Version 5 BayCANN (22/JUL/2022)
-data_outputs_simcrc <- read.csv("output/SimCRC/prediction_ANN_posteriors_SimCRC_v5_18jul22_1743.csv")
-data_outputs_simcrc$index <- "Model"
-data_outputs_simcrc <- data_outputs_simcrc[1:3000,]   #first chain
-true_target_simcrc <- read.csv("data-raw/20220714_SimCRC_LHS/20220714_simcrc_targets.csv")
-
-#Version 6 BayCANN (31/Aug/2022)
-data_outputs_simcrc <- read.csv("output/BayCANN_versions/SimCRC_v6_20220830_1727/prediction_ANN_posteriors_SimCRC_v6_20220830_1727.csv")
-data_outputs_simcrc$index <- "Model"
-data_outputs_simcrc <- data_outputs_simcrc[1501:6000,]   # except first chain
-true_target_simcrc <- read.csv("data-raw/20220819_SimCRC_LHS/20220819_simcrc_targets.csv")
-
-#Version 6 BayCANN (09/Sep/2022)
-data_outputs_simcrc <- read.csv("output/BayCANN_versions/SimCRC_v6_20220916_2140/prediction_ANN_posteriors_SimCRC_v6_20220916_2140.csv")
-data_outputs_simcrc$index <- "Model"
-true_target_simcrc <- read.csv("data-raw/20220909_SimCRC_LHS/20220909_simcrc_targets.csv")
 
 #version 7 BayCANN (SimCRC) (26/Sep/2022) (VERSION FOR PAPER)
-
 #Outputs
 data_outputs_simcrc <- read.csv("validations/SimCRC/20220926/20220926_AllLLOutput.csv")
 data_outputs_simcrc <- subset(data_outputs_simcrc, 
@@ -86,51 +48,12 @@ BayCANN_version <- "SimCRC_v6_20220916_2140"
 
 #Outputs
 
-###### Version MISCAN 2 (11 JUL 22)  ( POSTER SMDM) (VERSION FOR PAPER)
+###### Version MISCAN 2 (11 JUL 22)  (VERSION FOR PAPER)
 data_outputs_miscan <- read.csv("validations/MISCAN/targets-input_baycann_11jul22_1100.csv")
 data_outputs_miscan <- data_outputs_miscan[,2:length(data_outputs_miscan)]
 data_outputs_miscan$index <- "Model"
 true_target_miscan <- read.csv("data-raw/20220622_MISCANColon_LHS/Targets_MISCAN_v2.0.csv")
 BayCANN_version    <- "MISCAN_v2_20220716_1637"
-
-######## Version BayCANN 2 (12jul2022) 
-#v 2.1
-#data_outputs_miscan <- read.csv("output/MISCAN/prediction_ANN_posteriors_11jul22_1653_MISCAN.csv")
-#v2.2
-data_outputs_miscan <- read.csv("output/MISCAN/prediction_ANN_posteriors_16jul22_1617_MISCAN.csv")
-data_outputs_miscan$index <- "Model"
-
-#Targets
-#true_target_miscan <- read.csv("data-raw/20211204_MISCANColon_LHS/Targets_MISCAN_vF.csv")
-#true_target_miscan <- read.csv("data-raw/Targets_miscan_25may22/Targets_MISCAN_wide.csv")
-
-#Version 2 (12jul2022)
-true_target_miscan <- read.csv("data-raw/20220622_MISCANColon_LHS/Targets_MISCAN_v2.0.csv")
-
-###### Version 3 BayCANN (20 Ago 2022)
-# data_outputs_miscan <- read.csv("output/BayCANN_versions/MISCAN_v3_20220820_1136/prediction_ANN_posteriors_MISCAN_v3_20220820_1136.csv")
-# data_outputs_miscan$index <- "Model"
-# true_target_miscan <- read.csv("data-raw/20220622_MISCANColon_LHS/Targets_MISCAN_v2.0.csv")
-
-###### Version 4 BayCANN ANN (15 Sep 2022)
-data_outputs_miscan <- read.csv("output/BayCANN_versions/MISCAN_v4_20220915_1542/prediction_ANN_posteriors_MISCAN_v4_20220915_1542.csv")
-data_outputs_miscan$index <- "Model"
-true_target_miscan <- read.csv("data-raw/20220622_MISCANColon_LHS/Targets_MISCAN_v2.0.csv")
-
-###### Version 4 BayCANN MISCAN (15 Sep 2022)
-data_outputs_miscan <- read.csv("validations/MISCAN/targets_miscan-input_baycann_20220915.csv")
-data_outputs_miscan$index <- "Model"
-true_target_miscan <- read.csv("data-raw/20220622_MISCANColon_LHS/Targets_MISCAN_v2.0.csv")
-
-###### Version rosita v1 09apr2023
-
-data_outputs_miscan <- read.csv("output/BayCANN_versions/MISCAN_Rosita_v1_20230330_1725/prediction_ANN_posteriors_MISCAN_Rosita_v1_20230330_1725.csv")
-data_outputs_miscan$index <- "Model"
-true_target_miscan <- read.csv("data-raw/20230315_MISCAN_Rosita/targets.csv")
-
-
-
-
 
 ######  3.3 CRCSPIN  ----
 
