@@ -5,7 +5,7 @@
 
 #### 1.Libraries and functions  ==================================================
 
-library(keras)   #Install previously tensorflow
+library(keras)   #Previous installation of tensorflow is required
 library(rstan)
 library(reshape2)
 library(tidyverse)
